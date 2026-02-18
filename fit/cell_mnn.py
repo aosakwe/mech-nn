@@ -76,6 +76,7 @@ def train_cell_mnn(
     )
     mmd_loss = MMDLoss()
     losses: List[float] = []
+    max_grad_norm = 5.0
 
     for _ in range(epochs):
         epoch_loss = 0.0
@@ -91,8 +92,16 @@ def train_cell_mnn(
                 kinetic_weight=kinetic_weight,
                 inverse_weight=inverse_weight,
             )
+            if not torch.isfinite(loss):
+                continue
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
+            for param in model.parameters():
+                if param.grad is not None:
+                    param.grad = torch.nan_to_num(
+                        param.grad, nan=0.0, posinf=0.0, neginf=0.0
+                    )
             optimizer.step()
             epoch_loss += float(loss.detach().cpu())
         losses.append(epoch_loss / steps_per_epoch)

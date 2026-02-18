@@ -33,10 +33,17 @@ def regularization_terms(
     identity = torch.eye(p.shape[-1], device=p.device, dtype=p.dtype)
     identity = identity.expand(p.shape[0], -1, -1)
     p_reg = p + eps * identity
+    p_reg = torch.nan_to_num(p_reg, nan=0.0, posinf=1e4, neginf=-1e4)
     p_inv = torch.linalg.solve(p_reg, identity)
+    p_inv = torch.nan_to_num(p_inv, nan=0.0, posinf=0.0, neginf=0.0)
     a = torch.bmm(p, torch.bmm(torch.diag_embed(lambdas), p_inv))
+    a = torch.nan_to_num(a, nan=0.0, posinf=0.0, neginf=0.0)
     dz = torch.bmm(a, z.unsqueeze(-1)).squeeze(-1)
     kinetic = (dz.pow(2).sum(dim=-1)).mean()
-    det_p = torch.linalg.det(p).abs()
-    inverse_consistency = (1.0 / (det_p + eps)).mean()
+    sign, logabsdet = torch.linalg.slogdet(p_reg)
+    valid_sign = sign != 0
+    inv_det = torch.exp(-torch.clamp(logabsdet, min=-20.0, max=20.0))
+    inv_det = torch.where(valid_sign, inv_det, torch.full_like(inv_det, 1e4))
+    inv_det = torch.nan_to_num(inv_det, nan=1e4, posinf=1e4, neginf=0.0)
+    inverse_consistency = inv_det.mean()
     return kinetic, inverse_consistency
